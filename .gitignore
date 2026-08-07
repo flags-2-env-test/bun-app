@@ -1,0 +1,4 @@
+.zed/
+.zpkg.lock
+node_modules
+bun.lockb
