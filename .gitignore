@@ -2,3 +2,9 @@
 .zpkg.lock
 node_modules
 bun.lockb
+
+# Repository-local temporary data and authorized Git worktrees
+tmp
+temp
+tmp/worktrees
+temp/worktrees
