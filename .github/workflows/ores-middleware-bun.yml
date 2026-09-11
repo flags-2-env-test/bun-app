@@ -1,0 +1,67 @@
+name: ORES middleware native Bun stress
+
+on:
+  pull_request:
+  workflow_dispatch:
+  schedule:
+    - cron: "41 7 * * *"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ores-middleware-bun-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  ORES_MIDDLEWARE_SHA: d588e7bf890c337500641ed06d0b90f7b7a57748
+  BUN_IMAGE: oven/bun:1@sha256:e10577f0db68676a7024391c6e5cb4b879ebd17188ab750cf10024a6d700e5c4
+
+jobs:
+  bun:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ORESoftware/ores-middleware
+          ref: ${{ env.ORES_MIDDLEWARE_SHA }}
+          path: middleware
+          persist-credentials: false
+          fetch-depth: 1
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22.23.1
+          package-manager-cache: false
+
+      - name: Build exact middleware package
+        run: |
+          set -euo pipefail
+          test "$(git -C middleware rev-parse HEAD)" = "$ORES_MIDDLEWARE_SHA"
+          npm ci --prefix middleware/src/ts --no-audit --no-fund
+          npm run --prefix middleware/src/ts build
+          cp src/ores_middleware_stress.mjs middleware/src/ts/test/test-org-bun-stress.mjs
+
+      - name: Execute repeated Bun adversarial consumer
+        run: |
+          set -euo pipefail
+          for iteration in 1 2 3 4 5; do
+            echo "Bun middleware stress iteration $iteration"
+            docker run --rm \
+              -v "$PWD/middleware:/src:ro" \
+              -w /src/src/ts \
+              "$BUN_IMAGE" \
+              bun test/test-org-bun-stress.mjs
+          done
+
+      - name: Prove source pin and tracked tree stayed immutable
+        if: ${{ always() }}
+        run: |
+          set -euo pipefail
+          test "$(git -C middleware rev-parse HEAD)" = "$ORES_MIDDLEWARE_SHA"
+          test -z "$(git -C middleware diff --name-only)"
